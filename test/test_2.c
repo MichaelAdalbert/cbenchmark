@@ -11,6 +11,6 @@ void f() {
 
 int main() {
     int benchmark_result = benchmark(f);
-    assert(benchmark_result == 2);
+    assert(benchmark_result == THREAD_KILLED);
     return 0;
 }

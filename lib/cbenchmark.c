@@ -15,17 +15,19 @@ struct benchmark_data_s {
 
 typedef struct benchmark_data_s benchmark_data_t;
 
-static benchmark_data_t init_benchmark_data(function_t function) {
-    benchmark_data_t benchmark_data;
-    benchmark_data.function = function;
-    benchmark_data.benchmark_ended = false;
-    benchmark_data.finished = false;
-    benchmark_data.iterations = 0;
-    return benchmark_data;
+static benchmark_error_t init_benchmark_data(benchmark_data_t *benchmark_data, const function_t function) {
+    if (NULL == function) {
+        return FUNCTION_NOT_VALID;
+    }
+    benchmark_data->function = function;
+    benchmark_data->benchmark_ended = false;
+    benchmark_data->finished = false;
+    benchmark_data->iterations = 0;
+    return NO_ERROR;
 }
 
-static void* benchmark_function(void *arg) {
-    benchmark_data_t* benchmark_data = arg;
+static void *benchmark_function(void *arg) {
+    benchmark_data_t *benchmark_data = arg;
     while (benchmark_data->finished == false) {
         benchmark_data->function();
         benchmark_data->iterations++;
@@ -34,15 +36,19 @@ static void* benchmark_function(void *arg) {
     return NULL;
 }
 
-int benchmark(const function_t function) {
-    benchmark_data_t benchmark_data = init_benchmark_data(function);
+benchmark_error_t benchmark(const function_t function) {
+    benchmark_data_t benchmark_data;
     pthread_t thread;
-    int result = 0;
+    benchmark_error_t err;
 
-    const int pthread_creation = pthread_create(&thread, NULL, benchmark_function, &benchmark_data);
-    if (pthread_creation != 0) {
+    if ((err = init_benchmark_data(&benchmark_data, function)) != 0) {
+        fprintf(stderr, "Failed to initialize benchmark data\n");
+        return err;
+    }
+
+    if (pthread_create(&thread, NULL, benchmark_function, &benchmark_data) != 0) {
         perror("pthread_create");
-        return 1;
+        return THREAD_NOT_CREATED;
     }
 
     sleep(1);
@@ -51,19 +57,18 @@ int benchmark(const function_t function) {
 
     sleep(1);
 
-    if (benchmark_data.benchmark_ended) {
-        const int pthread_joined = pthread_join(thread, NULL);
-        if (pthread_joined != 0) {
-            perror("pthread_join");
-        }
-    } else {
-        const int pthread_canceled = pthread_cancel(thread);
-        if (pthread_canceled != 0) {
+    if (!benchmark_data.benchmark_ended) {
+        if (pthread_cancel(thread) != 0) {
             perror("pthread_cancel");
         }
-        result = 2;
+        return THREAD_KILLED;
+    }
+
+    if (pthread_join(thread, NULL) != 0) {
+        perror("pthread_join");
+        return THREAD_FAILED_TO_JOIN;
     }
 
     printf("Benchmark iterations: %llu\n", benchmark_data.iterations);
-    return result;
+    return NO_ERROR;
 }
